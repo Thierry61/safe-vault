@@ -1401,9 +1401,14 @@ impl DataManager {
         Ok(())
     }
 
+    // Chunk store storing data
+    pub fn chunk_store(&self) -> &ChunkStore<DataId> {
+        &self.chunk_store
+    }
+
     // Get IDs of all the data chunks we are responsible for, regardless of whether
     // we already have them or not.
-    fn our_chunks(&self) -> HashSet<DataId> {
+    pub fn our_chunks(&self) -> HashSet<DataId> {
         let mut result = self.cache.needed_chunks();
         result.extend(self.chunk_store.keys());
         result

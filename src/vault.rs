@@ -17,8 +17,7 @@ use maidsafe_utilities::serialisation;
 pub use mock_routing::Node as RoutingNode;
 #[cfg(all(test, feature = "use-mock-routing"))]
 use mock_routing::NodeBuilder;
-#[cfg(feature = "use-mock-crust")]
-use personas::data_manager::DataId;
+use personas::data_manager::{DataId, MutableDataId};
 use personas::data_manager::{self, DataManager};
 use personas::maid_manager::{self, MaidManager};
 #[cfg(feature = "use-mock-crypto")]
@@ -34,12 +33,40 @@ use routing::{Authority, EventStream, Request, Response, RoutingTable, XorName};
 #[cfg(not(feature = "use-mock-crypto"))]
 use rust_sodium;
 use rust_sodium::crypto::sign;
+use serde_json;
+use serde::{Serialize, Serializer};
+use hex;
+use std::collections::BTreeMap;
+
+// Structure to serialize vault data in JSON format
+#[derive(Default, Serialize)]
+struct VaultData {
+    #[serde(serialize_with = "serialize_xor_name")]
+    name: XorName,
+    immutable_data: u64,
+    mutable_data: u64,
+    type_tags: BTreeMap<String, u64>,
+    used_space: u64,
+    max_space: u64,
+}
+
+impl VaultData {
+    pub fn to_json_string(&self) -> String {
+        serde_json::to_string(&self).unwrap()
+    }
+}
+
+pub fn serialize_xor_name<S: Serializer>(id: &XorName, serializer: S) -> Result<S::Ok, S::Error> {
+    let id = format!("{}", hex::encode(id[0..4].as_ref()));
+    id.serialize(serializer)
+}
 
 /// Main struct to hold all personas and Routing instance
 pub struct Vault {
     maid_manager: MaidManager,
     data_manager: DataManager,
     routing_node: RoutingNode,
+    type_tags: BTreeMap<u64, String>,
 }
 
 impl Vault {
@@ -70,6 +97,16 @@ impl Vault {
         }?;
         let group_size = routing_node.min_section_size();
 
+        // Index tags by id
+        let mut type_tags = BTreeMap::new();
+        if let Some(stats) = config.stats {
+            for (tag_label, tag_ids) in &stats.type_tags {
+                for tag_id in tag_ids.iter() {
+                    let _ = type_tags.insert(*tag_id, tag_label.to_string());
+                }
+            }
+        }
+
         Ok(Vault {
             maid_manager: MaidManager::new(
                 group_size,
@@ -82,6 +119,7 @@ impl Vault {
                 config.max_capacity,
             )?,
             routing_node,
+            type_tags,
         })
     }
 
@@ -122,7 +160,12 @@ impl Vault {
                 res = EventResult::Terminate;
                 Ok(())
             }
-            Event::SectionSplit(_) | Event::SectionMerge(_) | Event::Connected | Event::Tick => {
+            Event::SectionSplit(_) | Event::SectionMerge(_) | Event::Connected => {
+                res = EventResult::Ignored;
+                Ok(())
+            }
+            Event::Tick => {
+                self.log_vault_data();
                 res = EventResult::Ignored;
                 Ok(())
             }
@@ -134,6 +177,34 @@ impl Vault {
 
         self.data_manager.check_timeouts(&mut self.routing_node);
         res
+    }
+
+    // Log vault data about every mn (in a specific target, to allow a specific appender)
+    fn log_vault_data(&mut self) {
+        // Get summary from data manager
+        let mut vd : VaultData = Default::default();
+        for data_id in self.data_manager.our_chunks() {
+            match data_id {
+                DataId::Mutable(MutableDataId(_, tag)) => {
+                    vd.mutable_data += 1;
+                    if let Some(tag_label) = self.type_tags.get(&tag) {
+                        *vd.type_tags.entry(tag_label.to_string()).or_insert(0) += 1;
+                    }
+                },
+                DataId::Immutable(_) => {
+                    vd.immutable_data += 1;
+                }
+            }
+        }
+        // Get chunk store data
+        let chunk_store = self.data_manager.chunk_store();
+        vd.used_space = chunk_store.used_space();
+        vd.max_space = chunk_store.max_space();
+        // Get relocated name from routing table
+        let rt = self.routing_node.routing_table().unwrap();
+        vd.name = *rt.our_name();
+        // Log vault data
+        info!(target: "vault_stats", "{}", vd.to_json_string());
     }
 
     fn on_request(
