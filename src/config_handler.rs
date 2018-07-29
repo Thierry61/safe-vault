@@ -42,6 +42,8 @@ pub struct DevConfig {
 pub struct StatsConfig {
     /// Type tags to display in stats
     pub type_tags: BTreeMap<String, Vec<u64>>,
+    /// Indicates if data ids are displayed in stats
+    pub data_ids: bool,
 }
 
 /// Reads the default vault config file.

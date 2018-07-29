@@ -36,7 +36,7 @@ use rust_sodium::crypto::sign;
 use serde_json;
 use serde::{Serialize, Serializer};
 use hex;
-use std::collections::BTreeMap;
+use std::collections::{BinaryHeap, BTreeMap, BTreeSet};
 
 // Structure to serialize vault data in JSON format
 #[derive(Default, Serialize)]
@@ -48,6 +48,10 @@ struct VaultData {
     type_tags: BTreeMap<String, u64>,
     used_space: u64,
     max_space: u64,
+    #[serde(serialize_with = "serialize_xor_names")]
+    immutable_data_set: BTreeSet<XorName>,
+    #[serde(serialize_with = "serialize_xor_names_and_tags")]
+    mutable_data_set: BTreeSet<(XorName, u64)>,
 }
 
 impl VaultData {
@@ -56,9 +60,28 @@ impl VaultData {
     }
 }
 
+// Length of serialized ids
+const ID_LENGTH: usize = 4;
+
 pub fn serialize_xor_name<S: Serializer>(id: &XorName, serializer: S) -> Result<S::Ok, S::Error> {
-    let id = format!("{}", hex::encode(id[0..4].as_ref()));
+    let id = format!("{}", hex::encode(id[0..ID_LENGTH].as_ref()));
     id.serialize(serializer)
+}
+
+pub fn serialize_xor_names<S: Serializer>(ids: &BTreeSet<XorName>, serializer: S) -> Result<S::Ok, S::Error> {
+    let ids = ids.iter()
+                 .map(|id| format!("{}", hex::encode(id[0..ID_LENGTH].as_ref())))
+                 .collect::<BinaryHeap<String>>()
+                 .into_sorted_vec();
+    ids.serialize(serializer)
+}
+
+pub fn serialize_xor_names_and_tags<S: Serializer>(ids_and_tags: &BTreeSet<(XorName, u64)>, serializer: S) -> Result<S::Ok, S::Error> {
+    let ids_and_tags = ids_and_tags.iter()
+                 .map(|(id, tag)| (format!("{}", hex::encode(id[0..ID_LENGTH].as_ref())), *tag))
+                 .collect::<BinaryHeap<(String, u64)>>()
+                 .into_sorted_vec();
+    ids_and_tags.serialize(serializer)
 }
 
 /// Main struct to hold all personas and Routing instance
@@ -67,6 +90,7 @@ pub struct Vault {
     data_manager: DataManager,
     routing_node: RoutingNode,
     type_tags: BTreeMap<u64, String>,
+    data_ids: bool,
 }
 
 impl Vault {
@@ -99,12 +123,14 @@ impl Vault {
 
         // Index tags by id
         let mut type_tags = BTreeMap::new();
+        let mut data_ids = false;
         if let Some(stats) = config.stats {
             for (tag_label, tag_ids) in &stats.type_tags {
                 for tag_id in tag_ids.iter() {
                     let _ = type_tags.insert(*tag_id, tag_label.to_string());
                 }
             }
+            data_ids = stats.data_ids;
         }
 
         Ok(Vault {
@@ -120,6 +146,7 @@ impl Vault {
             )?,
             routing_node,
             type_tags,
+            data_ids,
         })
     }
 
@@ -185,14 +212,20 @@ impl Vault {
         let mut vd : VaultData = Default::default();
         for data_id in self.data_manager.our_chunks() {
             match data_id {
-                DataId::Mutable(MutableDataId(_, tag)) => {
+                DataId::Mutable(MutableDataId(name, tag)) => {
                     vd.mutable_data += 1;
                     if let Some(tag_label) = self.type_tags.get(&tag) {
                         *vd.type_tags.entry(tag_label.to_string()).or_insert(0) += 1;
                     }
+                    if self.data_ids {
+                        let _ = vd.mutable_data_set.insert((name, tag));
+                    }
                 },
-                DataId::Immutable(_) => {
+                DataId::Immutable(name) => {
                     vd.immutable_data += 1;
+                    if self.data_ids {
+                        let _ = vd.immutable_data_set.insert(name.0);
+                    }
                 }
             }
         }
