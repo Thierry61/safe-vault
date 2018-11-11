@@ -29,7 +29,7 @@ pub use routing::Event;
 pub use routing::Node as RoutingNode;
 #[cfg(not(all(test, feature = "use-mock-routing")))]
 use routing::NodeBuilder;
-use routing::{Authority, EventStream, Request, Response, RoutingTable, XorName};
+use routing::{Authority, EventStream, Request, Response, RoutingTable, XorName, Prefix};
 #[cfg(not(feature = "use-mock-crypto"))]
 use rust_sodium;
 use rust_sodium::crypto::sign;
@@ -37,6 +37,19 @@ use serde_json;
 use serde::{Serialize, Serializer};
 use hex;
 use std::collections::{BinaryHeap, BTreeMap, BTreeSet};
+
+// Structure to serialize section definiton in JSON format
+#[derive(Default, Serialize)]
+struct Section {
+    // Base 2 string representation
+    #[serde(serialize_with = "serialize_prefix")]
+    prefix: Prefix<XorName>,
+    // Version number
+    version: u64,
+    // Array of hex string representation
+    #[serde(serialize_with = "serialize_xor_names")]
+    ids: BTreeSet<XorName>,
+}
 
 // Structure to serialize vault data in JSON format
 #[derive(Default, Serialize)]
@@ -52,6 +65,7 @@ struct VaultData {
     immutable_data_set: BTreeSet<XorName>,
     #[serde(serialize_with = "serialize_xor_names_and_tags")]
     mutable_data_set: BTreeSet<(XorName, u64)>,
+    sections: Vec<Section>,
 }
 
 impl VaultData {
@@ -60,14 +74,22 @@ impl VaultData {
     }
 }
 
+// Prefix<XorName> to base 2 string
+pub fn serialize_prefix<S: Serializer>(prefix: &Prefix<XorName>, serializer: S) -> Result<S::Ok, S::Error> {
+    let prefix = format!("{:b}", prefix);
+    serializer.serialize_str(&prefix)
+}
+
 // Length of serialized ids
 const ID_LENGTH: usize = 4;
 
+// XorName to hex string
 pub fn serialize_xor_name<S: Serializer>(id: &XorName, serializer: S) -> Result<S::Ok, S::Error> {
     let id = format!("{}", hex::encode(id[0..ID_LENGTH].as_ref()));
     id.serialize(serializer)
 }
 
+// Vector of XorName to vector of hex string
 pub fn serialize_xor_names<S: Serializer>(ids: &BTreeSet<XorName>, serializer: S) -> Result<S::Ok, S::Error> {
     let ids = ids.iter()
                  .map(|id| format!("{}", hex::encode(id[0..ID_LENGTH].as_ref())))
@@ -76,6 +98,7 @@ pub fn serialize_xor_names<S: Serializer>(ids: &BTreeSet<XorName>, serializer: S
     ids.serialize(serializer)
 }
 
+// Vector of (XorName, u64) tuples to vector of 2 elements arrays (hex string + number)
 pub fn serialize_xor_names_and_tags<S: Serializer>(ids_and_tags: &BTreeSet<(XorName, u64)>, serializer: S) -> Result<S::Ok, S::Error> {
     let ids_and_tags = ids_and_tags.iter()
                  .map(|(id, tag)| (format!("{}", hex::encode(id[0..ID_LENGTH].as_ref())), *tag))
@@ -236,6 +259,11 @@ impl Vault {
         // Get relocated name from routing table
         let rt = self.routing_node.routing_table().unwrap();
         vd.name = *rt.our_name();
+        // Get neighbouring sections
+        vd.sections = rt.all_sections()
+            .into_iter()
+            .map(|(p, (v, section))| Section { prefix: p, version: v, ids: section })
+            .collect::<Vec<Section>>();
         // Log vault data
         info!(target: "vault_stats", "{}", vd.to_json_string());
     }
