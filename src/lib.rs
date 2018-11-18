@@ -273,6 +273,7 @@ extern crate tempdir;
 extern crate tiny_keccak;
 #[macro_use]
 extern crate unwrap;
+extern crate hostname;
 
 /// For unit and integration tests only
 #[cfg(any(feature = "use-mock-crust", feature = "use-mock-routing"))]

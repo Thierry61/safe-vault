@@ -30,6 +30,7 @@ serde_json = "~1.0.13"
 tempdir = "~0.3.7"
 tiny-keccak = "~1.3.1"
 unwrap = "~1.2.0"
+hostname = "^0.1"
 
 [patch.crates-io]
 maidsafe_utilities = { git = "https://github.com/Thierry61/maidsafe_utilities.git", branch = "yaml-format" }

@@ -37,6 +37,7 @@ use serde_json;
 use serde::{Serialize, Serializer};
 use hex;
 use std::collections::{BinaryHeap, BTreeMap, BTreeSet};
+use hostname::get_hostname;
 
 // Structure to serialize section definiton in JSON format
 #[derive(Default, Serialize)]
@@ -66,6 +67,7 @@ struct VaultData {
     #[serde(serialize_with = "serialize_xor_names_and_tags")]
     mutable_data_set: BTreeSet<(XorName, u64)>,
     sections: Vec<Section>,
+    hostname: String,
 }
 
 impl VaultData {
@@ -264,6 +266,8 @@ impl Vault {
             .into_iter()
             .map(|(p, (v, section))| Section { prefix: p, version: v, ids: section })
             .collect::<Vec<Section>>();
+        // Get hostname
+        vd.hostname = get_hostname().unwrap();
         // Log vault data
         info!(target: "vault_stats", "{}", vd.to_json_string());
     }
