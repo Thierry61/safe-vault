@@ -937,11 +937,19 @@ impl DataManager {
         let mut refreshes = HashMap::default();
         for data_id in self.our_chunks() {
             match routing_table.other_closest_names(data_id.name(), self.group_size) {
-                None => {
-                    error!(
-                        "Moved out of close group of {:?} in a NodeLost event.",
-                        node_name
-                    );
+                None => match data_id {
+                    DataId::Immutable(idata_id) if self.cache.is_in_unneeded(&idata_id) => {
+                        debug!(
+                            "Not in close group of unneeded chunk {:?} in a NodeLost event.",
+                            data_id
+                            );
+                    }
+                    _ => {
+                        error!(
+                            "Not in close group of chunk {:?} in a NodeLost event.",
+                            data_id
+                        );
+                    }
                 }
                 Some(close_group) => {
                     // If no new node joined the group due to this event, continue:
