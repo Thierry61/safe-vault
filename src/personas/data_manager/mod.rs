@@ -21,7 +21,7 @@ use crate::utils::{self, HashMap, HashSet, Instant};
 use crate::vault::Refresh as VaultRefresh;
 use crate::vault::RoutingNode;
 use accumulator::Accumulator;
-use log::{error, info, trace, warn};
+use log::{debug, error, info, trace, warn};
 use maidsafe_utilities::serialisation;
 #[cfg(feature = "use-mock-crypto")]
 use routing::mock_crypto::rust_sodium;
@@ -944,11 +944,19 @@ impl DataManager {
         let mut refreshes = HashMap::default();
         for data_id in self.our_chunks() {
             match routing_table.other_closest_names(data_id.name(), self.group_size) {
-                None => {
-                    error!(
-                        "Moved out of close group of {:?} in a NodeLost event.",
-                        node_name
-                    );
+                None => match data_id {
+                    DataId::Immutable(idata_id) if self.cache.is_in_unneeded(&idata_id) => {
+                        debug!(
+                            "Not in close group of unneeded chunk {:?} in a NodeLost event.",
+                            data_id
+                            );
+                    }
+                    _ => {
+                        error!(
+                            "Not in close group of chunk {:?} in a NodeLost event.",
+                            data_id
+                        );
+                    }
                 }
                 Some(close_group) => {
                     // If no new node joined the group due to this event, continue:
@@ -1409,9 +1417,14 @@ impl DataManager {
         Ok(())
     }
 
+    // Chunk store storing data
+    pub fn chunk_store(&self) -> &ChunkStore<DataId> {
+        &self.chunk_store
+    }
+
     // Get IDs of all the data chunks we are responsible for, regardless of whether
     // we already have them or not.
-    fn our_chunks(&self) -> HashSet<DataId> {
+    pub fn our_chunks(&self) -> HashSet<DataId> {
         let mut result = self.cache.needed_chunks();
         result.extend(self.chunk_store.keys());
         result

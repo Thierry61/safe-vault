@@ -11,6 +11,7 @@ use config_file_handler::{self, FileHandler};
 use routing::XorName;
 use rust_sodium::crypto::sign;
 use serde_derive::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 
 /// Lets a vault configure a wallet address and storage limit.
@@ -26,6 +27,8 @@ pub struct Config {
     pub invite_key: Option<[u8; sign::PUBLICKEYBYTES]>,
     /// Developer options.
     pub dev: Option<DevConfig>,
+    /// Vault statistics options
+    pub stats: Option<StatsConfig>,
 }
 
 /// Extra configuration options intended for developers
@@ -33,6 +36,15 @@ pub struct Config {
 pub struct DevConfig {
     /// Allow clients to make unlimited mutation requests, i.e. ignore `DEFAULT_MAX_OPS_COUNT`.
     pub disable_mutation_limit: bool,
+}
+
+/// Extra configuration options defining some elements to insert in vault log
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct StatsConfig {
+    /// Type tags to display in stats
+    pub type_tags: BTreeMap<String, Vec<u64>>,
+    /// Indicates if data ids are displayed in stats
+    pub data_ids: bool,
 }
 
 /// Reads the default vault config file.

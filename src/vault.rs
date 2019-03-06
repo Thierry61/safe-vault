@@ -17,11 +17,12 @@ use crate::error::InternalError;
 pub use crate::mock_routing::Node as RoutingNode;
 #[cfg(all(test, feature = "use-mock-routing"))]
 use crate::mock_routing::NodeBuilder;
-#[cfg(feature = "use-mock-crust")]
-use crate::personas::data_manager::DataId;
+use crate::personas::data_manager::{DataId, MutableDataId};
 use crate::personas::data_manager::{self, DataManager};
 use crate::personas::maid_manager::{self, MaidManager};
-use log::{debug, warn};
+use hex;
+use hostname::get_hostname;
+use log::{debug, info, warn};
 use maidsafe_utilities::serialisation;
 #[cfg(feature = "use-mock-crypto")]
 use routing::mock_crypto::rust_sodium;
@@ -32,18 +33,93 @@ pub use routing::Event;
 pub use routing::Node as RoutingNode;
 #[cfg(not(all(test, feature = "use-mock-routing")))]
 use routing::NodeBuilder;
-use routing::{Authority, EventStream, Request, Response, RoutingTable, XorName};
+use routing::{Authority, EventStream, Prefix, Request, Response, RoutingTable, XorName};
 #[cfg(not(feature = "use-mock-crypto"))]
 use rust_sodium;
 use serde_derive::{Deserialize, Serialize};
+use serde::ser::Serializer;
+use serde_json;
+use std::collections::{BinaryHeap, BTreeMap, BTreeSet};
 #[cfg(feature = "use-mock-crust")]
 use unwrap::unwrap;
+
+// Structure to serialize section definiton in JSON format
+#[derive(Default, Serialize)]
+struct Section {
+    // Base 2 string representation
+    #[serde(serialize_with = "serialize_prefix")]
+    prefix: Prefix<XorName>,
+    // Version number
+    version: u64,
+    // Array of hex string representation
+    #[serde(serialize_with = "serialize_xor_names")]
+    ids: BTreeSet<XorName>,
+}
+
+// Structure to serialize vault data in JSON format
+#[derive(Default, Serialize)]
+struct VaultData {
+    #[serde(serialize_with = "serialize_xor_name")]
+    name: XorName,
+    immutable_data: u64,
+    mutable_data: u64,
+    type_tags: BTreeMap<String, u64>,
+    used_space: u64,
+    max_space: u64,
+    #[serde(serialize_with = "serialize_xor_names")]
+    immutable_data_set: BTreeSet<XorName>,
+    #[serde(serialize_with = "serialize_xor_names_and_tags")]
+    mutable_data_set: BTreeSet<(XorName, u64)>,
+    sections: Vec<Section>,
+    hostname: String,
+}
+
+impl VaultData {
+    pub fn to_json_string(&self) -> String {
+        serde_json::to_string(&self).unwrap()
+    }
+}
+
+// Prefix<XorName> to base 2 string
+pub fn serialize_prefix<S: Serializer>(prefix: &Prefix<XorName>, serializer: S) -> Result<S::Ok, S::Error> {
+    let prefix = format!("{:b}", prefix);
+    serializer.serialize_str(&prefix)
+}
+
+// Length of serialized ids
+const ID_LENGTH: usize = 4;
+
+// XorName to hex string
+pub fn serialize_xor_name<S: Serializer>(id: &XorName, serializer: S) -> Result<S::Ok, S::Error> {
+    let id = format!("{}", hex::encode(id[0..ID_LENGTH].as_ref()));
+    serializer.serialize_str(&id)
+}
+
+// Vector of XorName to vector of hex string
+pub fn serialize_xor_names<S: Serializer>(ids: &BTreeSet<XorName>, serializer: S) -> Result<S::Ok, S::Error> {
+    let ids = ids.iter()
+                 .map(|id| format!("{}", hex::encode(id[0..ID_LENGTH].as_ref())))
+                 .collect::<BinaryHeap<String>>()
+                 .into_sorted_vec();
+    serializer.collect_seq(ids)
+}
+
+// Vector of (XorName, u64) tuples to vector of 2 elements arrays (hex string + number)
+pub fn serialize_xor_names_and_tags<S: Serializer>(ids_and_tags: &BTreeSet<(XorName, u64)>, serializer: S) -> Result<S::Ok, S::Error> {
+    let ids_and_tags = ids_and_tags.iter()
+                 .map(|(id, tag)| (format!("{}", hex::encode(id[0..ID_LENGTH].as_ref())), *tag))
+                 .collect::<BinaryHeap<(String, u64)>>()
+                 .into_sorted_vec();
+    serializer.collect_seq(ids_and_tags)
+}
 
 /// Main struct to hold all personas and Routing instance
 pub struct Vault {
     maid_manager: MaidManager,
     data_manager: DataManager,
     routing_node: RoutingNode,
+    type_tags: BTreeMap<u64, String>,
+    data_ids: bool,
 }
 
 impl Vault {
@@ -75,6 +151,18 @@ impl Vault {
         }?;
         let group_size = routing_node.min_section_size();
 
+        // Index tags by id
+        let mut type_tags = BTreeMap::new();
+        let mut data_ids = false;
+        if let Some(stats) = config.stats {
+            for (tag_label, tag_ids) in &stats.type_tags {
+                for tag_id in tag_ids.iter() {
+                    let _ = type_tags.insert(*tag_id, tag_label.to_string());
+                }
+            }
+            data_ids = stats.data_ids;
+        }
+
         Ok(Vault {
             maid_manager: MaidManager::new(
                 group_size,
@@ -87,6 +175,8 @@ impl Vault {
                 config.max_capacity,
             )?,
             routing_node,
+            type_tags,
+            data_ids,
         })
     }
 
@@ -127,7 +217,12 @@ impl Vault {
                 res = EventResult::Terminate;
                 Ok(())
             }
-            Event::SectionSplit(_) | Event::SectionMerge(_) | Event::Connected | Event::Tick => {
+            Event::SectionSplit(_) | Event::SectionMerge(_) | Event::Connected => {
+                res = EventResult::Ignored;
+                Ok(())
+            }
+            Event::Tick => {
+                self.log_vault_data();
                 res = EventResult::Ignored;
                 Ok(())
             }
@@ -139,6 +234,47 @@ impl Vault {
 
         self.data_manager.check_timeouts(&mut self.routing_node);
         res
+    }
+
+    // Log vault data about every mn (in a specific target, to allow a specific appender)
+    fn log_vault_data(&mut self) {
+        // Get summary from data manager
+        let mut vd : VaultData = Default::default();
+        for data_id in self.data_manager.our_chunks() {
+            match data_id {
+                DataId::Mutable(MutableDataId(name, tag)) => {
+                    vd.mutable_data += 1;
+                    if let Some(tag_label) = self.type_tags.get(&tag) {
+                        *vd.type_tags.entry(tag_label.to_string()).or_insert(0) += 1;
+                    }
+                    if self.data_ids {
+                        let _ = vd.mutable_data_set.insert((name, tag));
+                    }
+                },
+                DataId::Immutable(name) => {
+                    vd.immutable_data += 1;
+                    if self.data_ids {
+                        let _ = vd.immutable_data_set.insert(name.0);
+                    }
+                }
+            }
+        }
+        // Get chunk store data
+        let chunk_store = self.data_manager.chunk_store();
+        vd.used_space = chunk_store.used_space();
+        vd.max_space = chunk_store.max_space();
+        // Get relocated name from routing table
+        let rt = self.routing_node.routing_table().unwrap();
+        vd.name = *rt.our_name();
+        // Get neighbouring sections
+        vd.sections = rt.all_sections()
+            .into_iter()
+            .map(|(p, (v, section))| Section { prefix: p, version: v, ids: section })
+            .collect::<Vec<Section>>();
+        // Get hostname
+        vd.hostname = get_hostname().unwrap();
+        // Log vault data
+        info!(target: "vault_stats", "{}", vd.to_json_string());
     }
 
     fn on_request(

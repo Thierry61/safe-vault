@@ -686,8 +686,8 @@ impl MaidManager {
             match routing_table.other_closest_names(name, self.group_size) {
                 None => {
                     error!(
-                        "Moved out of close group of {:?} in a NodeLost event.",
-                        node_name
+                        "Not in close group of account {:?} in a NodeLost event.",
+                        name
                     );
                 }
                 Some(close_group) => {

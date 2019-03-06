@@ -1,0 +1,47 @@
+# Parameter refreh_rate doesn't work.
+# This is reason why file format has been changed from toml to yaml
+# in maidsafe_utilities.
+# This file is kept for reference in case the problem is corrected for toml files.
+
+# Copy this sample file next to the binary to test (e.g. in "./target/release")
+
+# It is a simplified version of installer/docker/config/log.toml with addition
+# of "aws" appender and "vault_stats" logger using it.
+
+# "async_file" appender was removed because even if it was not used some
+# empty Node-nnn.log files were created.
+
+# If set, log4rs will scan the file at the specified rate in seconds for
+# changes and automatically reconfigure the loggers.
+refresh_rate = 30
+
+[appenders.async_console]
+kind    = "async_console"
+pattern = "{({l}):1.1} {d(%y-%m-%d %H:%M:%S%.6f)(utc)} {m}{n}"
+
+[appenders.aws]
+kind = "async_web_socket"
+server_url = "ws://127.0.0.1:55555" # Make sure to either spawn a web server at this address or
+                                    # change this URL.
+session_id = "magic-value"
+
+[root]
+level     = "warn"
+appenders = ["async_console"]
+
+[loggers."crust"]
+level = "warn"
+
+[loggers."routing"]
+level = "warn"
+
+[loggers."routing_stats"]
+level = "warn"
+
+[loggers."safe_vault"]
+level = "warn"
+
+[loggers."vault_stats"]
+level = "info"
+additive = false
+appenders = ["aws", "async_console"]
