@@ -162,6 +162,12 @@ mod detail {
     }
 
     fn update() -> Result<Status, Box<dyn (::std::error::Error)>> {
+        if !cfg!(feature = "auto-update") {
+            log::info!("Auto updates are disabled");
+            return Ok(Status::UpToDate(
+                "Auto updates are disabled".to_string(),
+            ));
+        }
         log::info!("Checking for updates...");
         let target = self_update::get_target();
         let releases = self_update::backends::github::ReleaseList::configure()
