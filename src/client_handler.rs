@@ -38,6 +38,7 @@ use std::{
     fmt::{self, Display, Formatter},
     net::SocketAddr,
     rc::Rc,
+    time::Instant,
 };
 
 /// The cost to Put a chunk to the network.
@@ -59,7 +60,12 @@ pub(crate) struct ClientHandler {
     client_candidates: HashMap<SocketAddr, (Vec<u8>, PublicId)>,
     login_packets: LoginPacketChunkStore,
     routing_node: Rc<RefCell<Node>>,
+    first: bool,
+    started_on: Instant,
 }
+
+// Delay since startup during which free test coins can be created (in seconds)
+const TEST_COINS_DELAY: u64 = 5 * 60;
 
 impl ClientHandler {
     pub fn new(
@@ -89,6 +95,8 @@ impl ClientHandler {
             client_candidates: Default::default(),
             login_packets,
             routing_node,
+            first: config.is_first(),
+            started_on: Instant::now(),
         };
         Ok(client_handler)
     }
@@ -960,6 +968,16 @@ impl ClientHandler {
             .map(|key| key == &owner_key)
             .unwrap_or(false);
         if own_request {
+            if !self.first {
+                error!("Only genesis node can create test coins: amount {}, owner_key: {}", amount, owner_key);
+                return None;
+            }
+            let delay = self.started_on.elapsed().as_secs();
+            if delay > TEST_COINS_DELAY {
+                error!("Delay for test coins expired ({} > {}): amount {}, owner_key: {}", delay, TEST_COINS_DELAY, amount, owner_key);
+                return None;
+            }
+            warn!("Create test coins: amount {}, owner_key: {}", amount, owner_key);
             return Some(Action::ConsensusVote(ConsensusAction::Forward {
                 request,
                 client_public_id: requester.clone(),
@@ -967,6 +985,7 @@ impl ClientHandler {
             }));
         }
 
+        info!("Create balance: amount {}, owner_key: {}", amount, owner_key);
         let total_amount = amount.checked_add(COST_OF_PUT)?;
         // When ClientA(owner/app with permissions) creates a balance for ClientB
         Some(Action::ConsensusVote(ConsensusAction::PayAndForward {
