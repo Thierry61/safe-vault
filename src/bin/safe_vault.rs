@@ -36,9 +36,11 @@ mod detail {
     use flexi_logger::{DeferredNow, Logger};
     use log::{self, Record};
     use safe_vault::{self, routing::Node, write_connection_info, Command, Config, Vault};
-    use self_update::cargo_crate_version;
-    use self_update::Status;
-    use std::{io::Write, process};
+    #[cfg(feature = "auto-update")]
+    use self_update::{cargo_crate_version, Status};
+    use std::io::Write;
+    #[cfg(feature = "auto-update")]
+    use std::process;
     use structopt::{clap, StructOpt};
     use unwrap::unwrap;
 
@@ -92,15 +94,21 @@ mod detail {
         .start()
         .expect("Error when initialising logger");
 
-        if config.update() {
-            match update() {
-                Ok(status) => {
-                    if let Status::Updated { .. } = status {
-                        println!("Vault has been updated. Please restart.");
-                        process::exit(0);
+        #[cfg(not(feature = "auto-update"))]
+        log::info!("Auto updates are disabled");
+
+        #[cfg(feature = "auto-update")]
+        {
+            if config.update() {
+                match update() {
+                    Ok(status) => {
+                        if let Status::Updated { .. } = status {
+                            println!("Vault has been updated. Please restart.");
+                            process::exit(0);
+                        }
                     }
+                    Err(e) => log::error!("Updating vault failed: {:?}", e),
                 }
-                Err(e) => log::error!("Updating vault failed: {:?}", e),
             }
         }
 
@@ -161,13 +169,8 @@ mod detail {
         }
     }
 
+    #[cfg(feature = "auto-update")]
     fn update() -> Result<Status, Box<dyn (::std::error::Error)>> {
-        if !cfg!(feature = "auto-update") {
-            log::info!("Auto updates are disabled");
-            return Ok(Status::UpToDate(
-                "Auto updates are disabled".to_string(),
-            ));
-        }
         log::info!("Checking for updates...");
         let target = self_update::get_target();
         let releases = self_update::backends::github::ReleaseList::configure()
