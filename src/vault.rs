@@ -30,6 +30,7 @@ use std::{
     net::SocketAddr,
     path::PathBuf,
     rc::Rc,
+    time::Instant,
 };
 
 const STATE_FILENAME: &str = "state";
@@ -60,6 +61,9 @@ pub enum Command {
     Shutdown,
 }
 
+// Delay between 2 successive statistics generation (in seconds)
+const STATS_DELAY: u64 = 1 * 60;
+
 /// Main vault struct.
 pub struct Vault<R: CryptoRng + Rng> {
     id: NodeFullId,
@@ -70,6 +74,7 @@ pub struct Vault<R: CryptoRng + Rng> {
     command_receiver: Receiver<Command>,
     routing_node: Rc<RefCell<Node>>,
     rng: R,
+    last_stats_on: Instant,
 }
 
 impl<R: CryptoRng + Rng> Vault<R> {
@@ -144,6 +149,7 @@ impl<R: CryptoRng + Rng> Vault<R> {
             command_receiver,
             routing_node,
             rng,
+            last_stats_on: Instant::now(),
         };
         vault.dump_state()?;
         Ok(vault)
@@ -212,6 +218,27 @@ impl<R: CryptoRng + Rng> Vault<R> {
                         warn!("Could not process operation: {}", err);
                     }
                 }
+            }
+
+            let delay = self.last_stats_on.elapsed().as_secs();
+            if delay > STATS_DELAY {
+                let path = self.root_dir.join(&"vault.log");
+                if let Ok(mut file) = fs::File::create(&path) {
+                    let elders = self
+                        .routing_node
+                        .borrow()
+                        .our_elders_info()
+                        .map(|iter| {
+                            iter.map(|p2p_node| {
+                                let peer_addr = *p2p_node.peer_addr();
+                                (XorName(p2p_node.name().0).to_string(), peer_addr)
+                            })
+                            .collect::<Vec<_>>()
+                        });
+                    let _ = serde_json::to_writer_pretty(&mut file, &elders);
+                    let _ = file.sync_all();
+                }
+                self.last_stats_on = Instant::now();
             }
         }
     }
