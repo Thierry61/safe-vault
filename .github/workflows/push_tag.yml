@@ -1,0 +1,95 @@
+on:
+  push:
+    tags: # Sequence of patterns
+      - sv*
+name: Generate and Upload Release Assets
+jobs:
+  create:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get Tag Version
+        id: get_version
+        run: echo ::set-output name=VERSION::$(echo $GITHUB_REF | cut -c11-)
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.get_version.outputs.VERSION }}
+          release_name: Release ${{ steps.get_version.outputs.VERSION }}
+          draft: false # Otherwise release is not applied on the tag created by user
+          prerelease: true
+      - name: Persist Data
+        shell: bash
+        run: printf "${{ steps.get_version.outputs.VERSION }}\t${{ steps.create_release.outputs.upload_url }}" > release-data.txt
+      - name: Upload Persisted Data
+        uses: actions/upload-artifact@v1
+        with:
+          name: release-data
+          path: release-data.txt
+  update:
+    name: Update Release
+    runs-on: ${{ matrix.os }}
+    needs: create
+    env:
+      target_dir: target/${{ matrix.target }}/release
+    strategy:
+      matrix:
+        target:
+          - x86_64-unknown-linux-musl
+          - x86_64-pc-windows-gnu
+          - x86_64-apple-darwin
+          - armv7-unknown-linux-musleabihf
+        include:
+          # All targets are cross compiled from Ubuntu, except MacOS
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: x86_64-pc-windows-gnu
+            os: ubuntu-latest
+          - target: armv7-unknown-linux-musleabihf
+            os: ubuntu-latest
+          # Special case for MacOS because cross command doesn't work for this target: error "Attempting to build Mach-O support on incorrect platform" in backtrace-sys"
+          # (though it seems supported in this list: https://github.com/rust-embedded/cross/blob/master/azure-pipelines.yml)
+          - target: x86_64-apple-darwin
+            os: macos-latest
+    steps:
+      - name: Download Persisted Data
+        uses: actions/download-artifact@v1
+        with:
+          name: release-data
+      - name: Get Tag Version
+        id: get_version
+        run: echo ::set-output name=VERSION::$(cut -f 1 release-data/release-data.txt)
+      - name: Get Upload URL
+        id: get_upload_url
+        run: echo ::set-output name=UPLOAD_URL::$(cut -f 2 release-data/release-data.txt)
+      - name: Get Zip File
+        id: get_zip_file
+        run: echo ::set-env name=zip_file::safe_vault-${{ steps.get_version.outputs.VERSION }}-${{ matrix.target }}.zip
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          use-cross: ${{ matrix.target != 'x86_64-apple-darwin'}}
+          command: build
+          args: --release --target=${{ matrix.target }}
+      - name: Zip Asset
+        run: zip -j ${{ env.zip_file }} ./${{ env.target_dir }}/safe_vault
+        if: ${{ !contains(matrix.target, 'windows') }}
+      - name: Zip Asset Windows
+        run: zip -j ${{ env.zip_file }} ./${{ env.target_dir }}/safe_vault.exe
+        if: contains(matrix.target, 'windows')
+      - uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.get_upload_url.outputs.UPLOAD_URL }}
+          asset_path: ./${{ env.zip_file }}
+          asset_name: ${{ env.zip_file }}
+          asset_content_type: application/zip
