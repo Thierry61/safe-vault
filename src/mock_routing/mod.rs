@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-pub use routing::{event, NetworkConfig, NetworkEvent, P2pNode, RoutingError};
+pub use routing::{event, TransportConfig, TransportEvent, P2pNode, RoutingError};
 
 use bytes::Bytes;
 use crossbeam_channel::{self as mpmc, Receiver, RecvError, Select, Sender};
@@ -57,7 +57,7 @@ impl ConsensusGroup {
 pub struct Node {
     events_tx: Sender<Event>,
     quic_p2p: QuicP2p,
-    network_node_rx: Receiver<NetworkEvent>,
+    network_node_rx: Receiver<TransportEvent>,
     network_node_rx_idx: usize,
     consensus_group: Option<Weak<RefCell<ConsensusGroup>>>,
 }
@@ -151,7 +151,7 @@ pub struct NodeBuilder {}
 
 impl NodeBuilder {
     /// Creates new `Node`.
-    pub fn create(self) -> (Node, Receiver<Event>, Receiver<NetworkEvent>) {
+    pub fn create(self) -> (Node, Receiver<Event>, Receiver<TransportEvent>) {
         let (quic_p2p, network_node_rx, network_client_rx) =
             unwrap!(setup_quic_p2p(&Default::default()));
         let (events_tx, events_rx) = mpmc::unbounded();
@@ -173,7 +173,7 @@ impl NodeBuilder {
     pub fn create_within_group(
         self,
         consensus_group: ConsensusGroupRef,
-    ) -> (Node, Receiver<Event>, Receiver<NetworkEvent>) {
+    ) -> (Node, Receiver<Event>, Receiver<TransportEvent>) {
         let (quic_p2p, network_node_rx, network_client_rx) =
             unwrap!(setup_quic_p2p(&Default::default()));
         let (events_tx, events_rx) = mpmc::unbounded();
@@ -198,8 +198,8 @@ impl NodeBuilder {
 }
 
 fn setup_quic_p2p(
-    config: &NetworkConfig,
-) -> Result<(QuicP2p, Receiver<NetworkEvent>, Receiver<NetworkEvent>), QuicP2pError> {
+    config: &TransportConfig,
+) -> Result<(QuicP2p, Receiver<TransportEvent>, Receiver<TransportEvent>), QuicP2pError> {
     let (event_senders, node_receiver, client_receiver) = {
         let (node_tx, node_rx) = crossbeam_channel::unbounded();
         let (client_tx, client_rx) = crossbeam_channel::unbounded();

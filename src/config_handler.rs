@@ -6,7 +6,7 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-use crate::routing::NetworkConfig;
+use crate::routing::TransportConfig;
 use crate::Result;
 use directories::ProjectDirs;
 use lazy_static::lazy_static;
@@ -84,7 +84,7 @@ pub struct Config {
     first: bool,
     #[structopt(flatten)]
     #[allow(missing_docs)]
-    network_config: NetworkConfig,
+    network_config: TransportConfig,
     /// dump shell completions for: [bash, fish, zsh, powershell, elvish]
     #[structopt(long)]
     completions: Option<String>,
@@ -162,12 +162,12 @@ impl Config {
     }
 
     /// Network configuration options.
-    pub fn network_config(&self) -> &NetworkConfig {
+    pub fn network_config(&self) -> &TransportConfig {
         &self.network_config
     }
 
     /// Set network configuration options.
-    pub fn set_network_config(&mut self, config: NetworkConfig) {
+    pub fn set_network_config(&mut self, config: TransportConfig) {
         self.network_config = config;
     }
 

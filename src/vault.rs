@@ -12,7 +12,7 @@ use crate::{
     client_handler::ClientHandler,
     coins_handler::CoinsHandler,
     data_handler::DataHandler,
-    routing::{event::Event as RoutingEvent, NetworkEvent as ClientEvent, Node},
+    routing::{event::Event as RoutingEvent, TransportEvent as ClientEvent, Node},
     rpc::Rpc,
     utils, Config, Result,
 };
@@ -227,14 +227,12 @@ impl<R: CryptoRng + Rng> Vault<R> {
                     let elders = self
                         .routing_node
                         .borrow()
-                        .our_elders_info()
-                        .map(|iter| {
-                            iter.map(|p2p_node| {
-                                let peer_addr = *p2p_node.peer_addr();
-                                (XorName(p2p_node.name().0).to_string(), peer_addr)
-                            })
-                            .collect::<Vec<_>>()
-                        });
+                        .our_elders()
+                        .map(|p2p_node| {
+                            let peer_addr = *p2p_node.peer_addr();
+                            (XorName(p2p_node.name().0).to_string(), peer_addr)
+                        })
+                        .collect::<Vec<_>>();
                     let _ = serde_json::to_writer_pretty(&mut file, &elders);
                     let _ = file.sync_all();
                 }
@@ -371,13 +369,13 @@ impl<R: CryptoRng + Rng> Vault<R> {
         None
     }
 
-    #[allow(dead_code)]
-    fn vote_for_action(&mut self, action: &ConsensusAction) -> Option<Action> {
-        self.routing_node
-            .borrow_mut()
-            .vote_for(utils::serialise(&action));
-        None
-    }
+//    #[allow(dead_code)]
+//    fn vote_for_action(&mut self, action: &ConsensusAction) -> Option<Action> {
+//        self.routing_node
+//            .borrow_mut()
+//            .vote_for(utils::serialise(&action));
+//        None
+//    }
 
     fn handle_action(&mut self, action: Action) -> Option<Action> {
         trace!("{} handle action {:?}", self, action);

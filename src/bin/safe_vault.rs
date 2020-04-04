@@ -35,7 +35,7 @@ fn main() {
 mod detail {
     use flexi_logger::{DeferredNow, Logger};
     use log::{self, Record};
-    use safe_vault::{self, routing::Node, write_connection_info, Command, Config, Vault};
+    use safe_vault::{self, routing::{Node, NodeConfig}, write_connection_info, Command, Config, Vault};
     #[cfg(feature = "auto-update")]
     use self_update::{cargo_crate_version, Status};
     use std::io::Write;
@@ -133,12 +133,16 @@ mod detail {
             log::error!("Failed to set interrupt handler: {:?}", error)
         }
 
-        let (routing_node, routing_rx, client_rx) = Node::builder()
-            .first(config.is_first())
-            .network_config(config.network_config().clone())
-            .create();
-
         let is_first = config.is_first();
+
+        // Note: Default values for elder size and section size are 7 and 100.
+        // They are defined in NetworkParams which is not exposed by routing.
+        let node_config = NodeConfig {
+            first: is_first,
+            transport_config: config.network_config().clone(),
+            ..Default::default()
+        };
+        let (routing_node, routing_rx, client_rx) = Node::new(node_config);
 
         let mut rng = rand::thread_rng();
 

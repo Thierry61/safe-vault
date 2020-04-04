@@ -21,7 +21,7 @@ use fake_clock::FakeClock;
 use log::trace;
 use mock_quic_p2p::{self as quic_p2p, Builder, Event, Network, OurType, Peer, QuicP2p};
 #[cfg(feature = "mock_parsec")]
-use routing::{self, NetworkConfig, Node};
+use routing::{self, TransportConfig, Node};
 use safe_nd::{
     AppFullId, AppPublicId, ClientFullId, ClientPublicId, Coins, Error, HandshakeRequest,
     HandshakeResponse, Message, MessageId, Notification, PublicId, PublicKey, Request, Response,
@@ -123,7 +123,7 @@ impl Environment {
         let endpoint = env.vaults[0].connection_info();
 
         // Create other nodes using the seed node endpoint as bootstrap contact.
-        let config = NetworkConfig::node().with_hard_coded_contact(endpoint);
+        let config = TransportConfig::node().with_hard_coded_contact(endpoint);
 
         for i in 1..num_vaults {
             env.vaults.push(TestVault::new_with_real_routing(
@@ -261,7 +261,7 @@ impl TestVault {
     }
 
     #[cfg(feature = "mock_parsec")]
-    fn new_with_real_routing(network_config: Option<NetworkConfig>, rng: &mut TestRng) -> Self {
+    fn new_with_real_routing(network_config: Option<TransportConfig>, rng: &mut TestRng) -> Self {
         let root_dir = unwrap!(TempDir::new("safe_vault"));
         trace!("creating a test vault at root_dir {:?}", root_dir);
 
