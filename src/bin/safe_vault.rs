@@ -169,6 +169,8 @@ mod detail {
                     unwrap!(write_connection_info(&our_conn_info));
                 }
                 vault.run();
+                // Make Ctrl-C work (yes, awful!)
+                std::process::exit(0);
             }
             Err(e) => {
                 println!("Cannot start vault due to error: {:?}", e);
