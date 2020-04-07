@@ -2080,7 +2080,7 @@ dependencies = [
 [[package]]
 name = "routing"
 version = "0.37.0"
-source = "git+https://github.com/thierry61/routing?branch=gha#cf6a5f46e145ccf990c17fb7ef8df55bc5d05cd3"
+source = "git+https://github.com/thierry61/routing?branch=gha#4e2174a5c66a7e81b25253550e889862b9ae4eb1"
 dependencies = [
  "bincode 1.1.4",
  "bytes 0.4.12",
