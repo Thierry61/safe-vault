@@ -1671,8 +1671,7 @@ dependencies = [
 [[package]]
 name = "quic-p2p"
 version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e9a3d2dc326b4094f599118fdaa8565bd14204b685b91301c47db74c4a41ee7"
+source = "git+https://github.com/thierry61/quic-p2p?branch=gha#bf9b6a289d1d3adea47a49e136ad4b372314a735"
 dependencies = [
  "base64 0.10.1",
  "bincode 1.1.4",
@@ -2102,7 +2101,7 @@ dependencies = [
 [[package]]
 name = "routing"
 version = "0.37.0"
-source = "git+https://github.com/maidsafe/routing.git?branch=fleming#88f3a5e35a5c6cf4d124118736ccecdf79ee0a0c"
+source = "git+https://github.com/thierry61/routing.git?branch=gha#b06bbe5d533e5dba7839fce9d25ae129bbc19f6c"
 dependencies = [
  "bincode 1.1.4",
  "bytes 0.5.4",
@@ -2133,7 +2132,6 @@ dependencies = [
  "threshold_crypto",
  "tiny-keccak",
  "tmp-ed25519",
- "unwrap",
 ]
 
 [[package]]

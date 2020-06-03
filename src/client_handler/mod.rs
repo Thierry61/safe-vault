@@ -73,7 +73,7 @@ impl ClientHandler {
         let messaging = Messaging::new(id.clone(), routing_node);
 
         let auth = Auth::new(id.clone(), auth_keys_db);
-        let balances = Balances::new(id.clone(), balances_db);
+        let balances = Balances::new(id.clone(), balances_db, config.is_first());
         let login_packets = LoginPackets::new(id.clone(), login_packets_db);
         let data = Evaluation::new(id.clone());
 
