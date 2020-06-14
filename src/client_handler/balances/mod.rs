@@ -15,21 +15,32 @@ use crate::{
     rpc::Rpc,
     utils, Result,
 };
-use log::{error, info, trace};
+use log::{error, info, trace, warn};
 use safe_nd::{
     Coins, CoinsRequest, Error as NdError, MessageId, NodePublicId, PublicId, PublicKey, Request,
     Response, Transaction, TransactionId, XorName,
 };
 use std::fmt::{self, Display, Formatter};
+use std::time::Instant;
+
+// Delay since startup during which free test coins can be created (in seconds)
+const TEST_COINS_DELAY: u64 = 5 * 60;
 
 pub struct Balances {
     id: NodePublicId,
     db: BalancesDb,
+    first: bool,
+    started_on: Instant,
 }
 
 impl Balances {
-    pub fn new(id: NodePublicId, db: BalancesDb) -> Self {
-        Self { id, db }
+    pub fn new(id: NodePublicId, db: BalancesDb, first: bool) -> Self {
+        Self {
+            id,
+            db,
+            first,
+            started_on: Instant::now(),
+        }
     }
 
     // on client request
@@ -93,6 +104,17 @@ impl Balances {
             .map(|key| key == &owner_key)
             .unwrap_or(false);
         if own_request {
+            // TODO: put back the test when data from genesis vault is send to next vaults
+//            if !self.first {
+//                error!("Only genesis node can create test coins: amount {}, owner_key: {}", amount, owner_key);
+//                return None;
+//            }
+            let delay = self.started_on.elapsed().as_secs();
+            if delay > TEST_COINS_DELAY {
+                error!("Delay for test coins expired ({} > {}): amount {}, owner_key: {}", delay, TEST_COINS_DELAY, amount, owner_key);
+                return None;
+            }
+            warn!("Create test coins: amount {}, owner_key: {}", amount, owner_key);
             return Some(Action::VoteFor(ConsensusAction::Forward {
                 request,
                 client_public_id: requester.clone(),
@@ -100,6 +122,7 @@ impl Balances {
             }));
         }
 
+        info!("Create balance: amount {}, owner_key: {}", amount, owner_key);
         let total_amount = amount.checked_add(COST_OF_PUT)?;
         // When ClientA(owner/app with permissions) creates a balance for ClientB
         Some(Action::VoteFor(ConsensusAction::PayAndForward {
