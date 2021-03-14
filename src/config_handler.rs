@@ -28,7 +28,7 @@ const CONFIG_FILE: &str = "node.config";
 const CONNECTION_INFO_FILE: &str = "node_connection_info.config";
 const DEFAULT_ROOT_DIR_NAME: &str = "root_dir";
 const DEFAULT_MAX_CAPACITY: u64 = 2 * 1024 * 1024 * 1024;
-const ARGS: [&str; 18] = [
+const ARGS: [&str; 20] = [
     "wallet-id",
     "max-capacity",
     "root-dir",
@@ -47,6 +47,8 @@ const ARGS: [&str; 18] = [
     "upnp-lease-duration",
     "local",
     "clear-data",
+    "external-port",
+    "external-ip",
 ];
 
 /// Node configuration
@@ -274,6 +276,15 @@ impl Config {
                 Some(value.parse().map_err(|e: ParseIntError| {
                     Error::Logic(format!("Config file error: {:?}", e))
                 })?);
+        } else if arg == "external-port" {
+            self.network_config.external_port =
+                Some(value.parse().map_err(|e: ParseIntError| {
+                    Error::Logic(format!("Config file error: {:?}", e))
+                })?);
+        } else if arg == "external-ip" {
+            self.network_config.external_ip = Some(value.parse().map_err(|e: AddrParseError| {
+                Error::Logic(format!("Config file error: {:?}", e))
+            })?);
         } else {
             println!("ERROR");
         }

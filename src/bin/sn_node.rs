@@ -81,7 +81,7 @@ async fn run_node() {
     if config.is_local() {
         config.listen_on_loopback();
     } else {
-        config.network_config.forward_port = true;
+        config.network_config.forward_port = false;
     }
 
     utils::init_logging(&config);
